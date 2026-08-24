@@ -84,9 +84,9 @@
 <div class="wrap">
 
   <div class="topbar">
-    <div class="brand">
+    <div class="brand" onclick="showView('tienda', document.getElementById('tab-tienda'))" style="cursor:pointer;">
       <img id="logo-img" src="assets/logo.png" alt="Pixel Store" style="width:34px;height:34px;border-radius:9px;object-fit:cover;">
-      <div class="brand-name">Pixel Store</div>
+      <div class="brand-name" id="tab-tienda">Pixel Store</div>
     </div>
     <div class="nav-tabs" id="nav-tabs">
       <button class="nav-tab active" data-view="catalogo" onclick="showView('catalogo', this)">Catálogo</button>
@@ -117,6 +117,25 @@
     </div>
   </div>
 
+  <!-- DATOS DE LA TIENDA -->
+  <div class="view" id="view-tienda">
+    <p class="eyebrow">Sobre nosotros</p>
+    <h1 class="section-title">Pixel Store</h1>
+    <div id="tienda-lectura" class="card-box">
+      <p class="empty-state">Cargando datos de la tienda…</p>
+    </div>
+    <div id="tienda-editar" style="display:none;margin-top:18px;">
+      <p class="subhead">Editar datos (solo admin)</p>
+      <div id="status-tienda" class="status-msg"></div>
+      <div class="card-box">
+        <div class="field-block"><label class="field-label">Nombre de la tienda</label><input class="field" id="t-nombre" type="text" placeholder="Pixel Store"></div>
+        <div class="field-block"><label class="field-label">Sitio de entrega</label><input class="field" id="t-entrega" type="text" placeholder="Ej: Solo entrega digital"></div>
+        <div class="field-block" style="margin-bottom:0;"><label class="field-label">Link de Google Maps</label><input class="field" id="t-maps" type="text" placeholder="https://maps.google.com/..."></div>
+      </div>
+      <button class="btn-primary" style="margin-top:14px;" onclick="guardarDatosTienda()">Guardar datos</button>
+    </div>
+  </div>
+
   <!-- PERFIL -->
   <div class="view" id="view-perfil">
     <p class="eyebrow">Tu cuenta</p>
@@ -132,12 +151,18 @@
         <input class="field" id="p-whatsapp" type="text" placeholder="+53 5xxx xxxx">
         <p class="help-note">Sin este dato no puedes realizar encargos.</p>
       </div>
-      <div class="field-block" style="margin-bottom:0;">
+      <div class="field-block">
         <label class="field-label">Carnet / DNI <span style="color:var(--text-muted);font-size:11px;">· solo para Efectivo USD o CUP</span></label>
         <input class="field" id="p-carnet" type="text" placeholder="00000000000">
       </div>
+      <div class="field-block" style="margin-bottom:0;">
+        <label class="field-label">Foto de perfil <span style="color:var(--text-muted);font-size:11px;">· opcional</span></label>
+        <input class="field" id="p-foto" type="text" placeholder="Pega aquí el link de tu foto">
+        <p class="help-note"><b>Medidas recomendadas:</b> foto cuadrada, 400×400 px (mínimo 200×200 px), JPG o PNG, hasta 2 MB.</p>
+      </div>
     </div>
     <button class="btn-primary" style="margin-top:14px;" onclick="guardarPerfil()">Guardar perfil</button>
+    <p class="login-switch" id="logout-row" style="display:none;"><span onclick="salir()">Cerrar sesión</span></p>
   </div>
 
   <!-- ESCUELA -->
@@ -209,7 +234,6 @@
       <input class="field" id="l-pass" type="password" placeholder="••••••••">
       <button class="btn-primary" style="margin-top:8px;" onclick="entrar()" id="btn-entrar">Entrar</button>
       <p class="login-switch" id="login-switch">¿No tienes cuenta? <span onclick="modoRegistro()">Crear una</span></p>
-      <p class="login-switch" id="logout-row" style="display:none;"><span onclick="salir()">Cerrar sesión</span></p>
     </div>
   </div>
 
@@ -292,6 +316,7 @@ async function cargarSesion(){
       document.getElementById('p-nombre').value = miPerfil.nombre_real || '';
       document.getElementById('p-whatsapp').value = miPerfil.whatsapp || '';
       document.getElementById('p-carnet').value = miPerfil.carnet || '';
+      document.getElementById('p-foto').value = miPerfil.foto_url || '';
       document.getElementById('chip').textContent = (miPerfil.nombre_real||'?').slice(0,2).toUpperCase();
     }
   }
@@ -303,7 +328,7 @@ function actualizarUIsegunSesion(){
   const tabAcceso = document.getElementById('tab-acceso');
   const logoutRow = document.getElementById('logout-row');
   if(sesion){
-    tabAcceso.textContent = 'Cuenta';
+    tabAcceso.classList.add('hidden');
     logoutRow.style.display = 'block';
     if(miPerfil && miPerfil.es_admin){
       tabAdmin.classList.remove('hidden');
@@ -311,131 +336,13 @@ function actualizarUIsegunSesion(){
       tabAdmin.classList.add('hidden');
     }
   } else {
-    tabAcceso.textContent = 'Acceder';
+    tabAcceso.classList.remove('hidden');
     logoutRow.style.display = 'none';
     tabAdmin.classList.add('hidden');
   }
+  actualizarVistaTienda();
 }
 
 async function guardarPerfil(){
   if(!sesion){ mostrarMsg('status-perfil','Primero inicia sesión','error'); return; }
-  const nombre_real = document.getElementById('p-nombre').value.trim();
-  const whatsapp = document.getElementById('p-whatsapp').value.trim();
-  const carnet = document.getElementById('p-carnet').value.trim();
-  if(!nombre_real || !whatsapp){ mostrarMsg('status-perfil','Nombre y WhatsApp son obligatorios','error'); return; }
-
-  const { error } = await sb.from('perfiles').upsert({
-    id: sesion.user.id, nombre_real, whatsapp, carnet: carnet || null
-  });
-  if(error){ mostrarMsg('status-perfil', error.message, 'error'); return; }
-  mostrarMsg('status-perfil','Perfil guardado ✔','ok');
-  await cargarSesion();
-}
-
-async function cargarProductos(){
-  const cont = document.getElementById('productos-grid');
-  let query = sb.from('productos').select('*');
-  const moneda = document.getElementById('filtro-moneda').value;
-  if(moneda) query = query.eq('moneda', moneda);
-  if(ordenPrecioAsc) query = query.order('precio', { ascending:true, nullsFirst:false });
-  else query = query.order('creado_en', { ascending:false });
-  const { data, error } = await query;
-  if(error || !data || data.length === 0){
-    cont.innerHTML = '<p class="empty-state">Aún no hay productos publicados.</p>';
-    return;
-  }
-  cont.innerHTML = '';
-  const etiquetaMoneda = { CUP:'CUP ₱', USDT:'USDT/USDC', USD:'USD 💵' };
-  data.forEach(p=>{
-    const div = document.createElement('div');
-    div.className = 'product';
-    div.innerHTML = `
-      <div class="card-art" style="${p.imagen_url ? `background-image:url('${p.imagen_url}');background-size:cover;background-position:center;` : ''}">
-        <span class="card-logo">${p.imagen_url ? '' : p.nombre}</span>
-      </div>
-      <div class="product-body">
-        <p class="product-name">${p.nombre}</p>
-        <p class="product-desc">${p.descripcion || ''}</p>
-        ${p.precio ? `<p class="product-price">${p.precio} ${etiquetaMoneda[p.moneda] || ''}</p>` : ''}
-        <button class="btn-order" onclick="crearEncargo('${p.id}')">Encargar</button>
-      </div>`;
-    cont.appendChild(div);
-  });
-}
-
-let ordenPrecioAsc = false;
-function toggleOrdenPrecio(){
-  ordenPrecioAsc = !ordenPrecioAsc;
-  document.getElementById('filtro-precio').classList.toggle('active', ordenPrecioAsc);
-  cargarProductos();
-}
-
-async function crearEncargo(producto_id){
-  if(!sesion){ alert('Primero inicia sesión'); showView('acceso', document.getElementById('tab-acceso')); return; }
-  if(!miPerfil || !miPerfil.whatsapp){ alert('Completa tu perfil (WhatsApp obligatorio) antes de encargar'); showView('perfil', document.querySelector('.nav-tab[data-view="perfil"]')); return; }
-  const { error } = await sb.from('encargos').insert({ usuario_id: sesion.user.id, producto_id, estado:'en_proceso' });
-  if(error){ alert('No se pudo crear el encargo: ' + error.message); return; }
-  alert('¡Encargo enviado! Te contactaremos por WhatsApp.');
-}
-
-async function agregarProducto(){
-  const nombre = document.getElementById('a-nombre').value.trim();
-  const descripcion = document.getElementById('a-desc').value.trim();
-  const imagen_url = document.getElementById('a-img').value.trim();
-  const precio = document.getElementById('a-precio').value.trim();
-  const moneda = document.getElementById('a-moneda').value;
-  if(!nombre){ mostrarMsg('status-admin','Ponle un nombre al producto','error'); return; }
-  const { error } = await sb.from('productos').insert({ nombre, descripcion, imagen_url: imagen_url || null, precio: precio ? parseFloat(precio) : null, moneda });
-  if(error){ mostrarMsg('status-admin', error.message, 'error'); return; }
-  mostrarMsg('status-admin','Producto publicado ✔','ok');
-  document.getElementById('a-nombre').value='';
-  document.getElementById('a-desc').value='';
-  document.getElementById('a-img').value='';
-  document.getElementById('a-precio').value='';
-  cargarProductos();
-}
-
-async function cargarGuias(){
-  const cont = document.getElementById('guias-lista');
-  const { data, error } = await sb.from('guias').select('*').order('creado_en', { ascending:false });
-  if(error || !data || data.length === 0){
-    cont.innerHTML = '<p class="empty-state">Aún no hay guías publicadas.</p>';
-    return;
-  }
-  cont.innerHTML = '';
-  data.forEach(g=>{
-    const div = document.createElement('div');
-    div.className = 'guia-item';
-    div.innerHTML = `
-      <img class="guia-img" src="${g.imagen_url || ''}" alt="">
-      <div>
-        <p class="guia-titulo">${g.titulo}</p>
-        <p class="guia-contenido">${g.contenido || ''}</p>
-      </div>`;
-    cont.appendChild(div);
-  });
-}
-
-async function agregarGuia(){
-  const titulo = document.getElementById('g-titulo').value.trim();
-  const contenido = document.getElementById('g-contenido').value.trim();
-  const imagen_url = document.getElementById('g-img').value.trim();
-  if(!titulo){ mostrarMsg('status-guia','Ponle un título a la guía','error'); return; }
-  const { error } = await sb.from('guias').insert({ titulo, contenido, imagen_url: imagen_url || null });
-  if(error){ mostrarMsg('status-guia', error.message, 'error'); return; }
-  mostrarMsg('status-guia','Guía publicada ✔','ok');
-  document.getElementById('g-titulo').value='';
-  document.getElementById('g-contenido').value='';
-  document.getElementById('g-img').value='';
-  cargarGuias();
-}
-
-// arranque
-(async function(){
-  await cargarSesion();
-  await cargarProductos();
-  await cargarGuias();
-})();
-</script>
-</body>
-</html>
+  const nombre_real = document.getElementById('p-nombre').v
